@@ -1,0 +1,247 @@
+---
+title: "Consumer Brand Preference Predictions"
+author: "Jennifer Brosnahan"
+date: "9/12/2020"
+output:
+  html_document: 
+    keep_md: yes
+    theme: lumen
+    highlight: haddock
+---
+
+## Background
+#### An Electronics Company would like for us to predict which computer brand customers from a new region will prefer, Acer or Sony. Doing so will help to determine inventory needs for new clientele and individual customer brand preferences for robust in-store and online marketing efforts. 
+
+## Objective
+#### The objective is to build predictive models and choose a model that can predict consumer computer brand preferene with at least 80% accuracy on test data. Ideal goal is a model that can predict brand preference with at least 90% level of certainty.
+
+
+## Load libraries
+```{r Loading packages, message=FALSE, warning=FALSE}
+# Loading packages
+library(tidyverse)
+library(caret)
+library(ggplot2)
+library(corrplot)
+library(openxlsx)
+library(h2o)
+library(knitr)
+library(kableExtra)
+```
+
+## Import data
+```{r}
+# training data
+complete <- read.csv(file.path('C:/Users/jlbro/OneDrive/C3T2/C3T2', 'complete.csv'), stringsAsFactors = TRUE)
+
+# testing data
+incomplete <- read.csv(file.path('C:/Users/jlbro/OneDrive/C3T2/C3T2', 'incomplete.csv'), stringsAsFactors = TRUE)
+```
+
+## Understand data
+```{r}
+# check structure of training data
+str(complete)
+```
+
+#### Observations
+* 9898 total observations with 7 total features
+* Six features are customer description variables, one feature is consumer brand preference, 'brand'
+* The data description tells us the codes for brand: Acer=0 and Sony=1
+
+```{r}
+# check descriptive stats
+summary(complete)
+summary(complete$brand)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# histogram of 'brand'
+ggplot(complete) +
+  geom_histogram(aes(brand), stat = 'count', bins = 2)
+```
+
+#### Binary classification is slightly imbalanced, 62/38
+
+## Preprocessing
+```{r}
+# check for NAs
+sum(is.na(complete))
+
+# change data type and values
+complete$brand <- as.factor(complete$brand)
+
+str(complete)
+```
+
+## Modeling
+```{r}
+set.seed(123)
+# createDataPartition() 75% and 25%
+index1 <- createDataPartition(complete$brand, p=0.75, list = FALSE)
+train1 <- complete[ index1,]
+test1 <- complete[-index1,]
+
+# Check structure of trainSet
+str(train1)
+```
+```{r}
+# set cross validation
+control <- trainControl(method = 'repeatedcv', 
+                        number=10, 
+                        repeats = 1)
+```
+
+## Random Forest using automatic tuning
+```{r}
+set.seed(123)
+
+# train algorithm
+rf1 <- train(brand~.,
+             data = train1,
+             method = 'rf',
+             trControl = control,
+             tuneLength = 1) 
+
+rf1
+```
+
+## Random forest using manual tuning
+```{r}
+set.seed(123)
+# train 
+rf2 <- train(brand~.,
+             data = train1,
+             method = 'rf',
+             trControl=control,
+             tuneLength = 5) 
+
+rf2
+```
+
+#### Observations
+* Both Random forest models are about the same. We will use Random Forest 1 with an mtry of 2 and 91.8% accuracy, as it is simpler and faster model and meets client goal of at least 80% accuracy.
+* Kappa is 82.5%, which is a more useful determination of accuracy if predicted class is imbalanced, as it helps normalize an imbalance in the classes.
+
+```{r}
+# variable importance using ggplot
+ggplot(varImp(rf1, scale=FALSE)) +
+  geom_bar(stat = 'identity') +
+  ggtitle('Variable Importance of Top Random Forest Model')
+```
+
+## Predict on test dataset using optimal model
+```{r}
+rfPreds <- predict(rf1, newdata = test1)
+```
+
+```{r}
+# predict using type = 'prob' helps see prediction for each observation
+rfProbs <- predict(rf1, newdata = test1, type = 'prob')
+head(rfProbs, 10)
+```
+
+## Confusion matrix of top model
+```{r}
+confusionMatrix(data = rfPreds, test1$brand)
+```
+
+#### Observation
+* Confusion matrix shows 92.6% accuracy, 92% sensitivity (% of positives we are catching), and 93% specificity (% of negatives we are catching). This is a good model.
+
+```{r}
+# postResample reveals if it will do well in real world or if it is overfitting
+postResample(rfPreds, test1$brand)
+```
+
+#### rf1 is not overfitting, accuracy and kappas are both comparable and high
+
+```{r}
+# compare predictions to actual within same data frame
+compare_rf <- data.frame(test1,rfPreds) 
+head(compare_rf, 100)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# summarize and plot
+summary(rfPreds)
+ggplot(compare_rf) +
+  geom_histogram(aes(rfPreds), stat = 'count', bins = 2) +
+  xlab('Brand Preference Predictions') +
+  ggtitle('Distribution of Brand Preference Predictions')
+```
+#### Model predicted on test data similar ratio of actual brand preference (38% Acer to 62% Sony)
+
+## Predict brand preference on new customer dataset: 'incomplete'
+```{r}
+# check structure of new dataset
+str(incomplete)
+```
+
+## Preprocess
+```{r}
+# check for NAs
+sum(is.na(incomplete))
+
+# change data type
+incomplete$brand <- as.factor(incomplete$brand)
+
+# check structure and summary
+str(incomplete)
+summary(incomplete)
+```
+
+#### Observation
+* Summary reveals some brands are answered as 1
+* Deeper dive of dataset unveils that first 102 rows of brand have been filled in
+* The rest (103:5000) are unanswered and need to be predicted
+
+```{r}
+# make brand predictions on new customer data 'incomplete'
+incompletePreds <- data.frame(predict(rf1, newdata = incomplete))
+names(incompletePreds)[1] <- 'Predictions'
+str(incompletePreds)
+```
+
+```{r}
+# postResample on first 102 observations to determine how well model did on test df
+subset_incomplete <- incomplete %>% slice(1:102)
+subset_PR <- incompletePreds %>% slice(1:102)
+postResample(subset_PR, subset_incomplete$brand)
+```
+
+#### Observation
+* Accuracy is high at 85.3%, kappa is lower, perhaps because of small sample size
+
+```{r}
+# compare first 102 actual observations to predictions
+bind_cols(subset_incomplete$brand, subset_PR)
+```
+
+```{r, message=FALSE, warning=FALSE}
+# summarize and plot predictions
+summary(incompletePreds)
+ggplot(incompletePreds) +
+  geom_histogram(aes(Predictions), stat = 'count', bins = 2)
+```
+
+#### Observation
+* Ratio of distribution of predictions is very similar to training and testing: 38% predicted to prefer Acer and 62% predicted to prefer Sony
+
+```{r}
+# predictions in new data
+compare_incomplete <- data.frame(incomplete,incompletePreds) 
+head(compare_incomplete, 150)
+```
+
+## View first 200 predictions of consumer brand preference on new dataset 'incomplete'
+```{r}
+kable(compare_incomplete[1:200,], format = 'html', caption = 'Brand Preference Predictions on New Customer Dataset', digits=3) %>% kable_styling(bootstrap_options = 'striped', full_width = FALSE)
+```
+
+## Actionable Insights
+* Continue product inventory ratio of Sony (62%) to Acer (38%) for new customer clientele
+* Target new customer base with direct-to-consumer email and mailing promotional efforts based on predicted brand preference
+* Deploy algorithm in online platform for upselling and recommender strategies during all client online shopping experiences
+
+
