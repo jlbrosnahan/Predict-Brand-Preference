@@ -1,9 +1,8 @@
 ## Predict-Brand-Preference
-Machine learning binary classification
-* It's all about marketing, inventory needs, and maximizing profits through machine learning
-
-Please see Predict-Brand.md for full analysis, scroll down for full business insights
-Also available on R Studio's RPubs at https://rpubs.com/brosnahj/659787
+It's all about marketing, inventory needs, and maximizing profits through machine learning
+* Machine learning binary classification
+* Please see Predict-Brand.md for full analysis, scroll down for full business insights
+* Also available on R Studio's RPubs at https://rpubs.com/brosnahj/659787
 
 ## Background
 An Electronics Company would like for us to predict which computer brand customers from a new region will prefer, Acer or Sony. Doing so will help to determine inventory needs for new clientele and individual customer brand preferences for robust in-store and online marketing efforts. 
